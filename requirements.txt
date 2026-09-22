@@ -1,0 +1,10 @@
+# Pin paho-mqtt to 1.x. Version 2.x requires CallbackAPIVersion and changed
+# on_connect's signature; this code is written against 1.x, and the
+# breakage shows up at runtime, not at install time.
+paho-mqtt==1.6.1
+
+# InfluxDB 1.x client. The 2.x server needs influxdb-client instead.
+influxdb==5.3.1
+
+# Benchmark metrics agent (docs/ARCHITECTURE.md §7)
+psutil==5.9.8

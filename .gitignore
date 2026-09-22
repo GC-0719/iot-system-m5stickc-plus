@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# PlatformIO build output
+firmware/m5stickc/.pio/
+
+# Secrets: WiFi credentials and server IP (copy config.h.example)
+firmware/m5stickc/include/config.h
+
+# Local tool settings
+.claude/
+.vscode/

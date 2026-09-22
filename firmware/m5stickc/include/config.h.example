@@ -1,0 +1,18 @@
+// Copy to config.h and fill in. config.h is gitignored so credentials never
+// reach the repository.
+//
+//     cp include/config.h.example include/config.h
+#pragma once
+
+// The ESP32 radio is 2.4 GHz ONLY. A 5 GHz-only SSID is invisible to it.
+#define WIFI_SSID       "your-2.4GHz-ssid"
+#define WIFI_PASSWORD   "your-password"
+
+// The Ubuntu VM's bridged LAN address. It is both the MQTT broker and the NTP
+// server -- the sensor takes its clock from the same machine that stores its
+// data, which is what makes end-to-end latency meaningful (ARCHITECTURE.md §6).
+#define CPS_SERVER_IP   "192.168.1.50"   // replace with the VM's bridged IP
+#define CPS_MQTT_PORT   1883
+
+// Free-form deployment tag, becomes an InfluxDB tag. Keep cardinality low.
+#define CPS_SITE        "apt"

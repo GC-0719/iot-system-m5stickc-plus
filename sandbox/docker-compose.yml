@@ -1,0 +1,45 @@
+# Throwaway sandbox for learning InfluxDB and Grafana on the Mac.
+#
+# THIS IS NOT THE PRIMARY ENVIRONMENT. Containers inherit the host clock, so
+# chrony here disciplines nothing and clock sync cannot be demonstrated. The
+# real stack is the bridged Ubuntu 22.04 VM built by server/setup/*.sh.
+#
+# What this IS good for: seeing the pipeline work end to end today, and learning
+# the InfluxDB query model and the Grafana editor without fighting a VM first.
+#
+#   cd sandbox && docker compose up -d
+#   docker compose down -v     # to erase it completely
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: cps-mosquitto
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  influxdb:
+    image: influxdb:1.8
+    container_name: cps-influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      # Creates the database on first boot so the forwarder has somewhere to go.
+      INFLUXDB_DB: cps_hw1
+      INFLUXDB_REPORTING_DISABLED: "true"
+
+  grafana:
+    image: grafana/grafana:7.5.7
+    container_name: cps-grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - influxdb
+    environment:
+      # Sandbox only: skip the login wall so you can go straight to a panel.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./grafana-datasource.yml:/etc/grafana/provisioning/datasources/influxdb.yml:ro
