@@ -1,0 +1,8 @@
+# TPM runtime output (encrypted binaries, wrapped keys, exported public keys)
+protected/
+stolen/
+*.enc
+*.pem
+*.ctx
+*.pub
+*.priv

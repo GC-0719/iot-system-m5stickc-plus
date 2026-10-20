@@ -68,3 +68,13 @@ by name from the config.
 - `main_ai_mqtt.py` live: tracked the simulator's still→walking→shaking cycle as
   `activity_code` 0→1→2, processing two devices and two measurements concurrently; results
   written with `src=mqtt` (vs `src=influx` for the retrospective path).
+
+## Reliability (per the HW2 notes)
+
+The notes require rigor about unreliable links. The live path (`main_ai_mqtt.py`) subscribes with
+QoS 1 on a persistent session (missed messages are redelivered after a restart), buffers samples by
+their **own timestamp** so out-of-order or delayed batches are placed correctly rather than appended,
+tolerates lost packets (each window is computed over whatever samples are present), and counts gaps
+from the sequence number. The archived path (`main_ai_influx.py`) reads time-ordered data and retries
+transient query failures. Verified with an out-of-order + dropped-batch test: windows emit in
+timestamp order, the lost batch is counted, and the analysis is unaffected.

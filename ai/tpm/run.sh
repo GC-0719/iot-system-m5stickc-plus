@@ -1,24 +1,22 @@
 #!/usr/bin/env bash
 # run.sh <name> <protected-dir> [args...]
 #
-# Launch step (HW2, req 4): UNSEAL the key from the TPM, decrypt the binary into
-# a private tmpfs that is wiped on exit, execute it, then clean up. The plaintext
-# binary never touches persistent storage.
+# Launch (HW2 req 4, per the slide notes):
+#   5. TPM RSA-decrypts pseudo_aes.enc  (fails on any TPM but the sealing one)
+#   6. de-obfuscate -> AES key
+#   7. AES-decrypt the software, run it from a wiped-on-exit dir
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"; source "$HERE/tpm_lib.sh"
-
 NAME="$1"; DIR="$2"; shift 2 || true
-ENC="$DIR/$NAME.enc"
 
-# 1) UNSEAL the DEK (fails on any TPM but the one that sealed it)
-CTX="$(mktemp)"; DEK="$(mktemp)"
-trap 'shred -u "$DEK" "$CTX" 2>/dev/null || rm -f "$DEK" "$CTX"' EXIT
-tpm2_load -C "$PRIMARY_HANDLE" -u "$DIR/dek.seal.pub" -r "$DIR/dek.seal.priv" -c "$CTX" >/dev/null
-tpm2_unseal -c "$CTX" -o "$DEK" >/dev/null
-tpm2_flushcontext -t >/dev/null 2>&1 || true
+PSEUDO="$(mktemp)"; AES="$(mktemp)"; RUNDIR="$(mktemp -d)"
+trap 'rm -rf "$RUNDIR"; shred -u "$PSEUDO" "$AES" 2>/dev/null || rm -f "$PSEUDO" "$AES"' EXIT
 
-# 2) decrypt into a wiped-on-exit workspace and run
-RUNDIR="$(mktemp -d)"; trap 'rm -rf "$RUNDIR"; shred -u "$DEK" "$CTX" 2>/dev/null || rm -f "$DEK" "$CTX"' EXIT
-openssl enc -d -aes-256-cbc -pbkdf2 -in "$ENC" -out "$RUNDIR/$NAME" -pass "file:$DEK"
+tpm2_rsadecrypt -c "$RSA_KEY_HANDLE" -s oaep \
+    "$DIR/pseudo_aes.enc" -o "$PSEUDO"                     # step 5 (TPM-gated)
+OBF="$(obf_key_of "$DIR/$NAME.enc")"                       # step 6: recompute feature
+openssl enc -d -aes-256-cbc -pbkdf2 -in "$PSEUDO" -out "$AES" -pass "pass:$OBF"
+openssl enc -d -aes-256-cbc -pbkdf2 -in "$DIR/$NAME.enc" \
+    -out "$RUNDIR/$NAME" -pass "file:$AES"                 # step 7
 chmod +x "$RUNDIR/$NAME"
 "$RUNDIR/$NAME" "$@"

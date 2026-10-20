@@ -46,10 +46,13 @@ MySQL 8.0: device registry + Grafana's config store
 ## Repository layout
 
 ```
-firmware/m5stickc/   ESP32 firmware (PlatformIO)
+firmware/m5stickc/   ESP32 firmware (PlatformIO); TLS via WiFiClientSecure + embedded CA
 sim/                 simulated sensor, same data contract as the firmware
 forwarder/           MQTT → InfluxDB forwarder with pipeline self-measurement
+ai/                  AI framework (HW2): main_ai_mqtt.py, main_ai_influx.py, config.yaml
+ai/tpm/              TPM-backed binary protection (HW2)
 server/setup/        provisioning scripts 01–06 and verify.sh
+server/tls/          CA + broker-cert generation for MQTT over TLS (HW2)
 server/grafana/      dashboard as code
 server/mysql/        device registry schema
 bench/               load generator, metrics agent, results summarizer
@@ -183,15 +186,54 @@ InfluxDB write latency p50 11.3 ms / p95 20.3 ms, zero dropped batches. End-to-e
 write overhead is ~7 ms on top of the one-second batching window. See
 [docs/ARCHITECTURE.md §7](docs/ARCHITECTURE.md#7-performance-evaluation).
 
-## Security
+## Security & AI framework (HW2)
 
-This stack is built for a trusted LAN: anonymous MQTT, no TLS, and default Grafana credentials.
-Don't expose it to the internet as is. The hardening path (MQTT credentials and ACLs, TLS, InfluxDB
-auth, a current Grafana release) is outlined in
-[docs/ARCHITECTURE.md §10](docs/ARCHITECTURE.md#10-known-gotchas-and-security).
+The second phase adds transport encryption, a configurable analytics layer, and protection of the
+analytics code itself. Full detail in **[ai/README.md](ai/README.md)** and
+**[ai/tpm/README.md](ai/tpm/README.md)**.
+
+### 1. MQTT over TLS
+
+The broker now also listens on **8883 with an SSL certificate**. A private CA signs the broker
+certificate (`server/tls/gen_certs.sh`); the firmware embeds that CA (`ca_cert.h`) and validates the
+broker via `WiFiClientSecure` before sending anything — verified on the real board. The plaintext
+1883 listener is kept only for the simulator/bench tools during migration.
+
+```bash
+bash server/tls/gen_certs.sh        # on the VM: regenerates the broker cert (reuses the CA)
+# test:  mosquitto_pub -h <ip> -p 8883 --cafile server/tls/ca.crt -t cps/hw1/test -m hi
+```
+
+### 2. AI processing framework
+
+Two entry points share one analysis core and are driven entirely by `ai/config.yaml` — no
+measurement, field, or analysis is named in code:
+
+```bash
+python3 ai/main_ai_mqtt.py                                        # live, from the MQTT stream
+python3 ai/main_ai_influx.py --start_time "now()-30m" --end_time "now()"   # archived, from InfluxDB
+```
+
+Both are built to be **rigorous about unreliable links**: the live path uses QoS 1 with a persistent
+session, buffers samples **by their own timestamp** (so out-of-order or delayed batches are placed
+correctly, not appended), tolerates lost packets, and counts gaps; the InfluxDB path reads
+time-ordered data and retries transient query failures.
+
+### 3 & 4. Protecting the analytics code
+
+- **Nuitka** compiles the entry points to standalone binaries (`ai/build.sh`,
+  `--standalone --onefile`) so the source cannot be read back; output is verified byte-identical to
+  the interpreted version.
+- **TPM** encrypts those binaries so a copied file is useless on another machine: an RSA key pair is
+  generated with its private half sealed in the TPM, an AES key encrypts the binary, that AES key is
+  obfuscated with a feature of the ciphertext and then RSA-wrapped to the TPM. `ai/tpm/demo.sh`
+  proves it runs on its origin TPM and is denied on a different one.
+
+> The remaining open items from HW1's threat model — anonymous MQTT, InfluxDB auth, default Grafana
+> credentials — are **not** addressed here; keep the stack on a trusted network.
 
 ## Roadmap
 
-- Real-time stream processing / anomaly detection subscribing to the live MQTT stream
-- Security hardening: TLS, per-device credentials, signed OTA updates
+- Real-time stream processing / anomaly detection building on the HW2 AI framework
+- Remaining hardening: MQTT per-device credentials and ACLs, InfluxDB auth, current Grafana release
 - Higher sample rates via a dedicated FreeRTOS sampling task and the IMU hardware FIFO

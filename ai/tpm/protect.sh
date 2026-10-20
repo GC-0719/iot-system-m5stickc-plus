@@ -1,32 +1,32 @@
 #!/usr/bin/env bash
 # protect.sh <plaintext-binary> <out-dir>
 #
-# Provisioning step (HW2, req 4): encrypt a binary with a fresh AES-256 key and
-# SEAL that key to the TPM. Afterwards the plaintext key exists nowhere on disk
-# -- only the TPM can release it, and only on this machine. Copying the outputs
-# to another machine yields files its TPM cannot unseal (see demo.sh).
-#
-# Env: TPM2TOOLS_TCTI must point at a running TPM (see tpm_lib.sh / demo.sh).
+# Provisioning (HW2 req 4, per the slide notes):
+#   1. RSA key pair generated in the TPM (private part sealed inside it); rsa.pem
+#   2. fresh AES key encrypts the software
+#   3. AES key obfuscated with a key derived from the encrypted file -> pseudo key
+#   4. pseudo key RSA-encrypted with rsa.pem
+# Only software.enc + pseudo_aes.enc + rsa.pem remain; plaintext keys shredded.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"; source "$HERE/tpm_lib.sh"
-
-BIN="$1"; OUT="${2:-$HERE/protected}"
+BIN="$1"; OUT="${2:-$HERE/protected}"; NAME="$(basename "$BIN")"
 mkdir -p "$OUT"
-ensure_primary
+ensure_rsa_key "$OUT/rsa.pem"                              # step 1
 
-# 1) fresh 256-bit data-encryption key, held only in a temp file
-DEK="$(mktemp)"; trap 'shred -u "$DEK" 2>/dev/null || rm -f "$DEK"' EXIT
-openssl rand -out "$DEK" 32
-
-# 2) encrypt the binary with it (AES-256-CBC, key derived from the DEK)
+AES="$(mktemp)"; PSEUDO="$(mktemp)"
+trap 'shred -u "$AES" "$PSEUDO" 2>/dev/null || rm -f "$AES" "$PSEUDO"' EXIT
+openssl rand -out "$AES" 32                                # step 2a
 openssl enc -aes-256-cbc -pbkdf2 -salt -in "$BIN" \
-    -out "$OUT/$(basename "$BIN").enc" -pass "file:$DEK"
+    -out "$OUT/$NAME.enc" -pass "file:$AES"                # step 2b
 
-# 3) SEAL the DEK to the TPM -- the sealed blob is useless off this TPM
-tpm2_create -C "$PRIMARY_HANDLE" -i "$DEK" \
-    -u "$OUT/dek.seal.pub" -r "$OUT/dek.seal.priv" >/dev/null
-tpm2_flushcontext -t >/dev/null 2>&1 || true
+OBF="$(obf_key_of "$OUT/$NAME.enc")"                       # step 3: feature of ciphertext
+openssl enc -aes-256-cbc -pbkdf2 -salt -in "$AES" \
+    -out "$PSEUDO" -pass "pass:$OBF"                       #   -> pseudo AES key
+openssl pkeyutl -encrypt -pubin -inkey "$OUT/rsa.pem" \
+    -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 \
+    -in "$PSEUDO" -out "$OUT/pseudo_aes.enc"               # step 4
 
-echo "protected $(basename "$BIN"):"
-echo "  $OUT/$(basename "$BIN").enc   (ciphertext)"
-echo "  $OUT/dek.seal.pub / dek.seal.priv   (TPM-sealed key; no plaintext key on disk)"
+echo "protected $NAME:"
+echo "  $OUT/$NAME.enc          (software, AES-encrypted)"
+echo "  $OUT/pseudo_aes.enc     (obfuscated AES key, RSA-encrypted to the TPM)"
+echo "  $OUT/rsa.pem            (public key; private part sealed in the TPM)"

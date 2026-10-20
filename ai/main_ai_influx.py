@@ -66,6 +66,21 @@ def influx_time(expr: str) -> str:
 
 
 # ----------------------------------------------------------- windowing --
+def query_retry(client, q, tries=4, delay=1.5):
+    """Run a query, retrying transient failures (unreliable link / long delay,
+    per the HW2 notes). Raises after the last attempt."""
+    import time as _t
+    last = None
+    for a in range(tries):
+        try:
+            return client.query(q, epoch="ns")
+        except Exception as exc:                        # noqa: BLE001
+            last = exc
+            print(f"[warn] influx query failed (attempt {a+1}/{tries}): {exc}")
+            _t.sleep(delay * (a + 1))
+    raise last
+
+
 def fetch_windows(client: InfluxDBClient, measurement: str, fields: list[str],
                   start: str, end: str, window_s: float):
     """Yield (device_id, window_end_ns, {field: [values]}) for each
@@ -74,7 +89,7 @@ def fetch_windows(client: InfluxDBClient, measurement: str, fields: list[str],
     q = (f'SELECT {cols}, "device_id"::tag FROM "{measurement}" '
          f'WHERE time >= {influx_time(start)} AND time <= {influx_time(end)} '
          f'ORDER BY time ASC')
-    rs = client.query(q, epoch="ns")
+    rs = query_retry(client, q)   # ORDER BY time ASC => already time-ordered
 
     # group points by device, then slice into windows
     by_dev: dict[str, list[tuple]] = {}
