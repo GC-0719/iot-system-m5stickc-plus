@@ -20,6 +20,10 @@
 #include <math.h>
 
 #include "config.h"
+#ifdef CPS_USE_TLS
+#include <WiFiClientSecure.h>
+#include "ca_cert.h"
+#endif
 
 // ---------------------------------------------------------------- contract --
 static const int      SAMPLE_HZ = 50;
@@ -57,7 +61,11 @@ static char topic_imu[72], topic_audio[72], topic_health[72], topic_status[72];
 // ~3 KB of JSON per IMU batch; the MQTT buffer below must exceed this.
 static char payload[7168];
 
-static WiFiClient  net;
+#ifdef CPS_USE_TLS
+static WiFiClientSecure net;        // validates the broker against CPS_CA_CERT
+#else
+static WiFiClient       net;
+#endif
 static MQTTClient  mqtt(8192);
 
 // SNTP bookkeeping. last_step_ms is the correction SNTP actually applied on its
@@ -179,7 +187,13 @@ static void startSNTP() {
 }
 
 static void connectMQTT() {
-  Serial.printf("[mqtt] %s:%d\n", CPS_SERVER_IP, CPS_MQTT_PORT);
+  Serial.printf("[mqtt] %s:%d%s\n", CPS_SERVER_IP, CPS_MQTT_PORT,
+#ifdef CPS_USE_TLS
+                " (TLS)");
+  net.setCACert(CPS_CA_CERT);        // reject any broker not signed by our CA
+#else
+                "");
+#endif
   mqtt.begin(CPS_SERVER_IP, CPS_MQTT_PORT, net);
   mqtt.setKeepAlive(60);
   // Last Will: if this board drops off ungracefully the broker announces it,

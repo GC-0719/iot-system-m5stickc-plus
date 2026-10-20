@@ -1,0 +1,39 @@
+# AI framework configuration (HW2, requirement 2).
+#
+# This file is the whole point of the "no hard coding" rule: main_ai_mqtt.py and
+# main_ai_influx.py name no measurement, field, or analysis in code -- they do
+# only what is listed here. Change the processing by editing this file; no
+# recompile is needed even after the Nuitka build (requirement 3), because the
+# binary reads this file at runtime.
+
+# Which measurements to process, which fields of each, and which analyses to run.
+# Analysis names are resolved against ai/processing.py:REGISTRY.
+measurements:
+  - name: imu
+    fields: [ax, ay, az]
+    analysis: [sma, rms, dominant_freq, activity]
+  - name: audio
+    fields: [rms_db]
+    analysis: [rolling_mean, variance]
+
+# Nominal sample rate (Hz) used for the frequency axis of FFT-based analyses.
+sample_hz: 50
+
+# Rolling window length, in seconds, that each analysis is computed over.
+window_seconds: 4
+
+mqtt:
+  host: cps.local          # stable name; resolves to the VM (see Req 1 / TLS)
+  port: 1883               # becomes 8883 once TLS (Req 1) lands
+  tls: false               # flipped to true with cafile once TLS lands
+  cafile: server/tls/ca.crt
+  sub_topic: "cps/hw1/+/#" # the forwarder already publishes device data here
+  pub_topic_fmt: "cps/hw1/{device}/ai"
+
+influx:
+  host: localhost
+  port: 8086
+  database: cps_hw1
+
+output:
+  measurement_prefix: ai_  # derived series are written back as ai_<measurement>

@@ -1,0 +1,4 @@
+# private keys and generated certs are never committed
+*.key
+*.crt
+*.srl

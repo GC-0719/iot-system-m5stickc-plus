@@ -1,0 +1,3 @@
+dist/
+*.bin
+__pycache__/

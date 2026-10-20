@@ -12,7 +12,16 @@
 // server -- the sensor takes its clock from the same machine that stores its
 // data, which is what makes end-to-end latency meaningful (ARCHITECTURE.md §6).
 #define CPS_SERVER_IP   "192.168.1.50"   // replace with the VM's bridged IP
+
+// MQTT over TLS (HW2 requirement 1). Define CPS_USE_TLS to validate the broker
+// against the embedded CA (include/ca_cert.h) and connect on 8883. Comment it
+// out to fall back to plaintext 1883.
+#define CPS_USE_TLS
+#ifdef CPS_USE_TLS
+#define CPS_MQTT_PORT   8883
+#else
 #define CPS_MQTT_PORT   1883
+#endif
 
 // Free-form deployment tag, becomes an InfluxDB tag. Keep cardinality low.
 #define CPS_SITE        "apt"
